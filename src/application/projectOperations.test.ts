@@ -1,0 +1,74 @@
+import { randomUUID } from 'node:crypto';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { PNG } from 'pngjs';
+import { afterEach, describe, expect, it } from 'vitest';
+import { createProjectModel, validateProject } from '../core/project';
+import type { Project } from '../core/types';
+import { ProjectOperationError, ProjectOperations } from './projectOperations';
+
+const roots: string[] = [];
+async function fixture() {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vfxart-mcp-')); roots.push(root);
+  await fs.mkdir(path.join(root, 'frames', 'f1'), { recursive: true }); await fs.mkdir(path.join(root, 'frames', 'f2'), { recursive: true }); await fs.mkdir(path.join(root, 'exports'), { recursive: true });
+  const write = async (relative: string, color: [number, number, number]) => { const png = new PNG({ width: 2, height: 2 }); for (let i = 0; i < png.data.length; i += 4) { png.data[i] = color[0]; png.data[i + 1] = color[1]; png.data[i + 2] = color[2]; png.data[i + 3] = 255; } await fs.writeFile(path.join(root, relative), PNG.sync.write(png)); };
+  await write('frames/f1/image.png', [255, 0, 0]); await write('frames/f2/image.png', [0, 0, 255]);
+  const project = createProjectModel(randomUUID(), 'MCP fixture');
+  project.frames = ['f1', 'f2'].map((id, index) => ({ id, source: `frames/${id}/image.png`, originalSource: `frames/${id}/image.png`, revisions: [{ id: `${id}:initial`, source: `frames/${id}/image.png`, createdAt: project.createdAt }], activeRevisionId: `${id}:initial`, width: 2, height: 2, offsetX: index, offsetY: 0, anchorX: 1, anchorY: 1 }));
+  project.animation.frameIds = ['f1', 'f2']; project.exportSettings = { prefix: 'mcp', layout: 'horizontal', columns: 2, padding: 0, includeMetadata: true };
+  await fs.writeFile(path.join(root, 'project.json'), JSON.stringify(project));
+  return { root, project };
+}
+afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
+
+describe('ProjectOperations', () => {
+  it('previews in memory, applies independent revisions, and persists the active revision', async () => {
+    const { root } = await fixture(), operations = new ProjectOperations();
+    const preview = await operations.previewProcess(root, 'f1', { colorCount: 1, minimumAlpha: 1 });
+    expect(preview.frame.width).toBe(2);
+    const before = await fs.readdir(path.join(root, 'frames', 'f1'));
+    expect(before).toEqual(['image.png']);
+    const applied = await operations.applyProcess(root, ['f1'], { colorCount: 1, minimumAlpha: 1 });
+    expect(applied.frames[0].source).not.toBe('frames/f1/image.png');
+    expect(applied.frames[0].revisions).toHaveLength(2);
+    expect(await fs.access(path.join(root, applied.frames[0].source)).then(() => true)).toBe(true);
+    const reopened = validateProject(JSON.parse(await fs.readFile(path.join(root, 'project.json'), 'utf8')) as Project);
+    expect(reopened.frames[0].activeRevisionId).toBe(applied.frames[0].activeRevisionId);
+  });
+
+  it('uses a shared Upgrade transaction and exports without silent overwrite', async () => {
+    const { root } = await fixture(), operations = new ProjectOperations();
+    const before = await operations.analyze(root, { profile: 'pixel-art', strength: 70, padding: 2 });
+    expect(before.frameCount).toBe(2);
+    const upgraded = await operations.applyUpgrade(root, { profile: 'pixel-art', strength: 70, padding: 2 });
+    expect(upgraded.frames.every(frame => frame.revisions.length === 2)).toBe(true);
+    expect(upgraded.frames[0].revisions.at(-1)?.upgrade?.sharedPalette).toEqual(upgraded.frames[1].revisions.at(-1)?.upgrade?.sharedPalette);
+    const exported = await operations.exportAnimation(root, { prefix: 'mcp_result' });
+    expect(exported.files).toContain('exports/mcp_result_sheet.png');
+    await expect(operations.exportAnimation(root, { prefix: 'mcp_result' })).rejects.toMatchObject({ code: 'COLLISION' } satisfies Partial<ProjectOperationError>);
+  });
+
+  it('upgrades only an explicit animation group', async () => {
+    const { root } = await fixture(), operations = new ProjectOperations();
+    const applied = await operations.applyUpgrade(root, { profile: 'pixel-art', strength: 70 }, ['f1']);
+    expect(applied.frames.find(frame => frame.id === 'f1')?.revisions).toHaveLength(2);
+    expect(applied.frames.find(frame => frame.id === 'f2')?.revisions).toHaveLength(1);
+    await expect(operations.analyze(root, { profile: 'pixel-art' }, ['missing'])).rejects.toMatchObject({ code: 'NOT_FOUND' } satisfies Partial<ProjectOperationError>);
+  });
+
+  it('imports copied originals as independent initial frame revisions', async () => {
+    const { root } = await fixture(), operations = new ProjectOperations();
+    const png = new PNG({ width: 3, height: 2 }); png.data.fill(0); for (let index = 3; index < png.data.length; index += 4) png.data[index] = 255;
+    const bytes = PNG.sync.write(png);
+    const imported = await operations.importSprites(root, [
+      { name: 'Normal/slash.png', original: bytes, png: bytes },
+      { name: 'Apex/slash.png', original: bytes, png: bytes }
+    ]);
+    expect(imported.frameIds).toHaveLength(2);
+    expect(imported.project.assets.map(asset => asset.name)).toEqual(['Normal/slash.png', 'Apex/slash.png']);
+    expect(imported.project.frames.slice(-2).every(frame => frame.revisions.length === 1 && frame.width === 3 && frame.height === 2)).toBe(true);
+    await expect(fs.access(path.join(root, 'assets', 'originals', 'Normal', 'slash.png'))).resolves.toBeUndefined();
+    await expect(fs.access(path.join(root, imported.project.frames.at(-1)!.source))).resolves.toBeUndefined();
+  });
+});
