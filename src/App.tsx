@@ -24,11 +24,25 @@ function makeCanvas(width:number,height:number) { const canvas=document.createEl
 function canvasBytes(canvas:HTMLCanvasElement) { return new Promise<Uint8Array>((resolve,reject)=>canvas.toBlob(async b=>b?resolve(new Uint8Array(await b.arrayBuffer())):reject(new Error('PNG encoding failed')),'image/png')); }
 function loadImage(bytes:Uint8Array) { return new Promise<HTMLImageElement>((resolve,reject)=>{ const buffer=bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength) as ArrayBuffer; const url=URL.createObjectURL(new Blob([buffer],{type:'image/*'})); const img=new Image(); img.onload=()=>{URL.revokeObjectURL(url);resolve(img)};img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('Could not decode image'))};img.src=url; }); }
 /**
- * Project state is deliberately JSON data only.  Do not use structuredClone here:
- * React DOM events (for example PointerEvent) cannot cross that boundary and a
- * mistakenly forwarded event used to blank the whole renderer while autosaving.
+ * Project state is deliberately plain JSON-like data. Reject DOM objects,
+ * functions and circular references rather than letting one poison a later
+ * autosave or renderer update.
  */
-function cloneProject<T>(value:T):T { return JSON.parse(JSON.stringify(value)) as T; }
+function cloneProject<T>(value:T):T {
+  const seen=new WeakSet<object>();
+  const copy=(input:unknown):unknown=>{
+    if(input===null||typeof input==='string'||typeof input==='boolean')return input;
+    if(typeof input==='number')return Number.isFinite(input)?input:0;
+    if(Array.isArray(input))return input.map(copy).filter(item=>item!==undefined);
+    if(typeof input!=='object')return undefined;
+    if(Object.getPrototypeOf(input)!==Object.prototype||seen.has(input))return undefined;
+    seen.add(input);
+    const output:Record<string,unknown>={};
+    for(const [key,item] of Object.entries(input)){const cloned=copy(item);if(cloned!==undefined)output[key]=cloned;}
+    return output;
+  };
+  return copy(value) as T;
+}
 function frameImage(frame:RawFrame){const c=makeCanvas(frame.width,frame.height),data=Uint8ClampedArray.from(frame.data);c.getContext('2d')!.putImageData(new ImageData(data,frame.width,frame.height),0,0);const image=new Image();image.src=c.toDataURL();return image;}
 
 export function App() {

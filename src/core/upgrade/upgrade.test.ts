@@ -18,6 +18,13 @@ describe('Upgrade core',()=>{
     expect(preview.analysis.recommendedSettings.framing).toMatchObject({contentWidth:96,contentHeight:64,padX:0,padY:16});
     expect(preview.frames[0].anchorX).toBe(48);expect(preview.frames[0].anchorY).toBe(48);
   });
+  it('uses the Cutter canvas rather than guessing a crop from sparse pixels',()=>{
+    const sparse=frame('sparse',16,16,solid(16,16,[0,0,0,0]));
+    sparse.frame.data[(15*16+15)*4+3]=255;
+    const result=previewUpgrade([sparse],{profile:'pixel-art',strength:70,padding:0});
+    expect(result.analysis.globalBounds).toEqual({x:0,y:0,width:16,height:16});
+    expect(result.frames[0]).toMatchObject({width:16,height:16,anchorX:8,anchorY:8,offsetX:0,offsetY:0});
+  });
   it('balances shared-palette samples so a large frame cannot hide a small frame color',()=>{
     const dominant=frame('dominant',80,20,solid(80,20,[255,0,0,255]));
     const rare=frame('rare',2,2,solid(2,2,[0,0,255,255]));
