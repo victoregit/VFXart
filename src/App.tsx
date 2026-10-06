@@ -23,7 +23,12 @@ const defaults = { alphaThreshold: 10, minimumRegion: 4, padding: 0, groupingDis
 function makeCanvas(width:number,height:number) { const canvas=document.createElement('canvas'); canvas.width=width; canvas.height=height; return canvas; }
 function canvasBytes(canvas:HTMLCanvasElement) { return new Promise<Uint8Array>((resolve,reject)=>canvas.toBlob(async b=>b?resolve(new Uint8Array(await b.arrayBuffer())):reject(new Error('PNG encoding failed')),'image/png')); }
 function loadImage(bytes:Uint8Array) { return new Promise<HTMLImageElement>((resolve,reject)=>{ const buffer=bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength) as ArrayBuffer; const url=URL.createObjectURL(new Blob([buffer],{type:'image/*'})); const img=new Image(); img.onload=()=>{URL.revokeObjectURL(url);resolve(img)};img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('Could not decode image'))};img.src=url; }); }
-function cloneProject<T>(value:T):T { return structuredClone(value); }
+/**
+ * Project state is deliberately JSON data only.  Do not use structuredClone here:
+ * React DOM events (for example PointerEvent) cannot cross that boundary and a
+ * mistakenly forwarded event used to blank the whole renderer while autosaving.
+ */
+function cloneProject<T>(value:T):T { return JSON.parse(JSON.stringify(value)) as T; }
 function frameImage(frame:RawFrame){const c=makeCanvas(frame.width,frame.height),data=Uint8ClampedArray.from(frame.data);c.getContext('2d')!.putImageData(new ImageData(data,frame.width,frame.height),0,0);const image=new Image();image.src=c.toDataURL();return image;}
 
 export function App() {
@@ -37,7 +42,16 @@ export function App() {
   const images=useRef(new Map<string,HTMLImageElement>()), history=useRef(new History()), saveTimer=useRef<number|undefined>(undefined);
   const processorWorker=useRef<Worker|undefined>(undefined), workerJob=useRef(0), latestPreviewJob=useRef(0), latestSuggestionJob=useRef(0), previewTimer=useRef<number|undefined>(undefined);
   const project=session?.project, asset=project?.assets.find(a=>a.id===assetId), frame=project?.frames.find(f=>f.id===frameId);
-  const updateProject=useCallback((mutate:(p:Project)=>void, markDirty=true)=>{setSession(old=>{if(!old)return old;const copy=cloneProject(old.project);mutate(copy);return {...old,project:copy}});if(markDirty)setDirty(true)},[]);
+  const updateProject=useCallback((mutate:(p:Project)=>void, markDirty=true)=>{
+    // React invokes bare handlers with an event. Keep an accidental bare handler
+    // from ever becoming part of the serializable project model.
+    if (typeof mutate !== 'function') {
+      console.warn('Ignored an invalid project update payload.');
+      return;
+    }
+    setSession(old=>{if(!old)return old;const copy=cloneProject(old.project);mutate(copy);return {...old,project:copy}});
+    if(markDirty)setDirty(true);
+  },[]);
   const save=useCallback(async()=>{if(!session)return;try{const saved=await window.vfx.saveProject(session.root,session.project);setSession(old=>old?{...old,project:saved}:old);setDirty(false);setNotice('Project saved.')}catch(error){setNotice(`Save failed: ${(error as Error).message}`)}},[session]);
   const scheduleSave=useCallback(()=>{window.clearTimeout(saveTimer.current);saveTimer.current=window.setTimeout(()=>void save(),500)},[save]);
   useEffect(()=>{if(dirty)scheduleSave()},[dirty,scheduleSave]);

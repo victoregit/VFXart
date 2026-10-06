@@ -1,6 +1,6 @@
 {
   "name": "vfxart",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "private": true,
   "description": "Pixel art and sprite workflow desktop studio",
   "main": "dist-electron/electron/main.js",
