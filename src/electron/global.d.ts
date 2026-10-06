@@ -1,0 +1,6 @@
+import type { Project } from '../core/types';
+import type { McpConnectionMode, McpStatus } from './mcpServer';
+import type { PixelProcessingSettings } from '../core/pixel-processing';
+import type { UpgradeAnalysisOptions } from '../core/upgrade';
+declare global { interface Window { vfx: { createProject(name:string):Promise<{root:string;project:Project}|null>; openProject():Promise<{root:string;project:Project}|null>; saveProject(root:string,project:Project):Promise<Project>; selectAndImport(root:string):Promise<{name:string;relativePath:string}[]>; importPaths(root:string,paths:string[]):Promise<{name:string;relativePath:string}[]>; readFile(root:string,relative:string):Promise<Uint8Array>; writeFile(root:string,relative:string,bytes:Uint8Array,overwrite?:boolean):Promise<string>; confirmDiscard(message:string):Promise<boolean>; appVersion():Promise<string>; mcpStatus():Promise<McpStatus>; startMcp(mode:McpConnectionMode):Promise<McpStatus>; stopMcp():Promise<McpStatus>; applyProcess(root:string,frameIds:string[],settings:Partial<PixelProcessingSettings>):Promise<Project>; applyUpgrade(root:string,options:UpgradeAnalysisOptions):Promise<Project>; exportAnimation(root:string,options:Partial<Project['exportSettings']>):Promise<{files:string[];frameCount:number;sheet:{width:number;height:number}}>; }; } }
+export {};

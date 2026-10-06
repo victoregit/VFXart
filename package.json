@@ -1,0 +1,46 @@
+{
+  "name": "vfxart",
+  "version": "0.2.1",
+  "private": true,
+  "description": "Pixel art and sprite workflow desktop studio",
+  "main": "dist-electron/electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"vite\" \"npm:dev:electron\"",
+    "dev:electron": "npm run build:main && wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 tsx src/electron/main.ts",
+    "build:main": "cross-env NODE_OPTIONS=--max-old-space-size=8192 tsc -p tsconfig.electron.json",
+    "typecheck": "cross-env NODE_OPTIONS=--max-old-space-size=8192 tsc --noEmit && cross-env NODE_OPTIONS=--max-old-space-size=8192 tsc -p tsconfig.electron.json --noEmit --noCheck false",
+    "test": "vitest run",
+    "build": "vite build && npm run build:main",
+    "build:electron": "npm run build && electron-builder --win nsis"
+  },
+  "build": {
+    "appId": "com.vfxart.app",
+    "productName": "VFXart",
+    "directories": { "output": "release/${version}" },
+    "files": ["renderer/**/*", "dist-electron/**/*", "package.json"],
+    "win": { "target": "nsis" }
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.24.0",
+    "@vitejs/plugin-react": "latest",
+    "pngjs": "^7.0.0",
+    "react": "latest",
+    "react-dom": "latest",
+    "vite": "latest",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/pngjs": "^6.0.5",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "concurrently": "latest",
+    "cross-env": "latest",
+    "electron": "latest",
+    "electron-builder": "latest",
+    "tsx": "latest",
+    "typescript": "^5.7.3",
+    "vitest": "latest",
+    "wait-on": "latest"
+  }
+}

@@ -1,0 +1,16 @@
+import { useEffect, useState } from 'react';
+import type { McpConnectionMode, McpStatus } from '../electron/mcpServer';
+
+const labels: Record<McpConnectionMode, string> = { local: 'Local', 'secure-tunnel': 'Secure MCP Tunnel', 'public-https': 'Public HTTPS Fallback' };
+export function McpPanel({ onClose, onSave }: { onClose: () => void; onSave: () => Promise<void> }) {
+  const [status, setStatus] = useState<McpStatus | null>(null);
+  const [mode, setMode] = useState<McpConnectionMode>('local');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const refresh = async () => { try { const next = await window.vfx.mcpStatus(); setStatus(next); setMode(next.mode); } catch (error) { setMessage((error as Error).message); } };
+  useEffect(() => { void refresh(); const timer = window.setInterval(() => void refresh(), 3000); return () => window.clearInterval(timer); }, []);
+  const start = async () => { setBusy(true); try { await onSave(); const next = await window.vfx.startMcp(mode); setStatus(next); setMessage('MCP local server is running.'); } catch (error) { setMessage(`Could not start MCP: ${(error as Error).message}`); } finally { setBusy(false); } };
+  const stop = async () => { setBusy(true); try { setStatus(await window.vfx.stopMcp()); setMessage('MCP server stopped.'); } catch (error) { setMessage((error as Error).message); } finally { setBusy(false); } };
+  const active = Boolean(status?.enabled);
+  return <div className="modal-backdrop" role="presentation"><section className="project-modal mcp-panel" role="dialog" aria-modal="true" aria-label="VFXart MCP"><header><h2>ChatGPT MCP</h2><button onClick={onClose}>×</button></header><p>Only the open VFXart project is available to this local session. Frames must already exist.</p><label>Connection mode<select value={mode} onChange={event => setMode(event.target.value as McpConnectionMode)} disabled={active || busy}><option value="local">Local — MCP Inspector</option><option value="secure-tunnel">Secure MCP Tunnel — read, preview and write</option><option value="public-https">Public HTTPS fallback — read and preview only</option></select></label><div className="mcp-policy"><b>{labels[mode]}</b><span>{mode === 'public-https' ? 'Apply and Export are rejected by the server in this mode.' : mode === 'secure-tunnel' ? 'Configure tunnel_id and tunnel-client outside VFXart; writes still need local approval.' : 'For local development and MCP Inspector.'}</span></div>{active ? <><div className="metric"><span>Endpoint</span><code>{status?.endpoint}</code><small>Authorized project: {status?.projectName}</small></div><div className="metric"><span>Last activity</span><small>{status?.lastActivity ? `${status.lastActivity.tool} · ${new Date(status.lastActivity.at).toLocaleTimeString()}` : 'No MCP calls yet'}</small></div><button className="primary" disabled={busy} onClick={() => void stop()}>{busy ? 'Stopping…' : 'Stop MCP server'}</button></> : <button className="primary" disabled={busy} onClick={() => void start()}>{busy ? 'Starting…' : 'Enable MCP for this project'}</button>}<p className="quiet">Secure Tunnel is configured in OpenAI Platform and runs through tunnel-client. VFXart does not store its credentials. Public HTTPS fallback is intentionally read-only.</p>{message && <p className="notice">{message}</p>}</section></div>;
+}
