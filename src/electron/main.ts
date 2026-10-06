@@ -49,6 +49,11 @@ app.whenReady().then(async () => {
   ipcMain.handle('app:confirm-discard', async (_event, message:string) => (await dialog.showMessageBox({type:'warning',buttons:['Cancel','Discard'],defaultId:0,cancelId:0,message})).response===1);
   ipcMain.handle('app:version', () => app.getVersion());
   ipcMain.handle('mcp:status', async () => mcp.status());
+  ipcMain.handle('mcp:authorize-source-folder', async () => {
+    const result = await dialog.showOpenDialog({ title: 'Authorize a source folder for VFXart MCP imports', properties: ['openDirectory'] });
+    if (result.canceled || !result.filePaths[0]) return mcp.status();
+    return mcp.authorizeSourceFolder(result.filePaths[0]);
+  });
   ipcMain.handle('mcp:start', async (_event, mode: McpConnectionMode) => mcp.start(mode));
   ipcMain.handle('mcp:stop', async () => mcp.stop());
   ipcMain.handle('mcp:apply-process', async (_event, root: string, frameIds: string[], settings: Record<string, unknown>) => { if (mcp.status().projectId === undefined) throw new Error('No project is authorized'); const service = new (await import('../application/projectOperations')).ProjectOperations(); return service.applyProcess(rootFor(root), frameIds, settings); });

@@ -32,3 +32,5 @@ Open a project with frames, select **MCP** in the lower-left corner, choose a co
 
 The MCP session is bound to the currently open project. Process, Upgrade, and Export requests from ChatGPT always show a local VFXart confirmation dialog before filesystem changes begin.
 
+To import a trusted asset folder from a ChatGPT request, choose **Authorize source folder…** in the MCP panel first. The server exposes only an opaque folder ID to MCP, copies supported images into `assets/originals`, and creates one initial frame per image. The authorization is cleared when the project changes or the app closes; VFXart never modifies the selected source folder.
+

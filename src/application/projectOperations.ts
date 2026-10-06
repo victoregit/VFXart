@@ -10,6 +10,13 @@ import type { UpgradeAnalysisOptions, UpgradeProfile, UpgradeProvenance } from '
 import { validateProject } from '../core/project';
 import type { FrameRevision, Project, SpriteFrame } from '../core/types';
 
+export interface ImportedSpriteInput {
+  /** Path relative to a source folder already authorized by the desktop app. */
+  name: string;
+  original: Uint8Array;
+  png: Uint8Array;
+}
+
 export type ProjectOperationErrorCode = 'NOT_FOUND' | 'INVALID_ARGUMENT' | 'COLLISION' | 'WRITE_FAILED';
 export class ProjectOperationError extends Error { constructor(public readonly code: ProjectOperationErrorCode, message: string) { super(message); } }
 
@@ -68,6 +75,12 @@ async function ensureNotExists(root: string, relative: string) {
   const exists = await fs.access(resolveInside(root, relative)).then(() => true).catch(() => false);
   if (exists) throw new ProjectOperationError('COLLISION', `Export already exists: ${relative}`);
 }
+async function nextAvailableRelative(root: string, relative: string) {
+  const normalized = relativePath(relative), extension = path.posix.extname(normalized), stem = normalized.slice(0, normalized.length - extension.length);
+  let candidate = normalized, index = 2;
+  while (await fs.access(resolveInside(root, candidate)).then(() => true).catch(() => false)) candidate = `${stem}_${index++}${extension}`;
+  return candidate;
+}
 function upgradeProvenance(frame: SpriteFrame, analysis: ReturnType<typeof analyzeUpgrade>, profile: UpgradeProfile, strength: number): UpgradeProvenance {
   return { upgradeVersion: '1', profile, strength, settings: analysis.recommendedSettings.processor, target: { width: analysis.recommendedWidth, height: analysis.recommendedHeight }, sharedPalette: analysis.sharedPalette, sourceRevisionId: frame.activeRevisionId, globalBounds: analysis.globalBounds, framing: analysis.recommendedSettings.framing };
 }
@@ -103,6 +116,41 @@ export class ProjectOperations {
     const { raw } = await this.rawFrame(root, frameId); const resolved = mergeSettings(settings); return { frame: processFrame(cloneFrame(raw), resolved), settings: resolved };
   }
   async previewUpgrade(root: string, options: UpgradeAnalysisOptions = {}) { const { frames } = await this.animationInputs(root); return previewUpgrade(frames, options); }
+
+  /**
+   * Commits copied originals and initial PNG frame revisions only after every
+   * source has been written. Source locations never enter project.json.
+   */
+  async importSprites(root: string, inputs: ImportedSpriteInput[]): Promise<{ project: Project; frameIds: string[] }> {
+    if (!inputs.length) throw new ProjectOperationError('INVALID_ARGUMENT', 'No supported sprite images were found in the authorized source folder');
+    const project = await loadProject(root), next = structuredClone(project), staged: Array<{ original:string; frame:string; asset:Project['assets'][number]; slice:Project['slices'][number]; sprite:SpriteFrame }> = [], reservedOriginals = new Set<string>();
+    for (const input of inputs) {
+      const sourceName = relativePath(input.name);
+      const decoded = PNG.sync.read(Buffer.from(input.png));
+      if (decoded.width < 1 || decoded.height < 1) throw new ProjectOperationError('INVALID_ARGUMENT', `Invalid sprite dimensions: ${sourceName}`);
+      let original = await nextAvailableRelative(root, `assets/originals/${sourceName}`);
+      while (reservedOriginals.has(original)) {
+        const extension = path.posix.extname(original), stem = original.slice(0, original.length - extension.length), match = stem.match(/_(\d+)$/), nextIndex = match ? Number(match[1]) + 1 : 2;
+        original = `${match ? stem.slice(0, -match[0].length) : stem}_${nextIndex}${extension}`;
+      }
+      reservedOriginals.add(original);
+      const id = randomUUID(), frame = `frames/${id}/image.png`, revisionId = `${id}:initial`, importedAt = new Date().toISOString();
+      const asset = { id: randomUUID(), name: sourceName, originalPath: original, width: decoded.width, height: decoded.height, mime: sourceName.toLowerCase().endsWith('.webp') ? 'image/webp' : sourceName.match(/jpe?g$/i) ? 'image/jpeg' : 'image/png', importedAt };
+      const slice = { id: randomUUID(), assetId: asset.id, x: 0, y: 0, width: decoded.width, height: decoded.height, order: next.slices.length + staged.length, mode: 'manual' as const };
+      const sprite: SpriteFrame = { id, source: frame, originalSource: frame, revisions: [{ id: revisionId, source: frame, createdAt: importedAt }], activeRevisionId: revisionId, assetId: asset.id, sliceId: slice.id, width: decoded.width, height: decoded.height, offsetX: 0, offsetY: 0, anchorX: Math.floor(decoded.width / 2), anchorY: Math.floor(decoded.height / 2), derivedPath: frame };
+      staged.push({ original, frame, asset, slice, sprite });
+    }
+    try {
+      for (let index = 0; index < staged.length; index++) {
+        await atomicWrite(resolveInside(root, staged[index].original), inputs[index].original);
+        await atomicWrite(resolveInside(root, staged[index].frame), inputs[index].png);
+      }
+    } catch (error) {
+      throw new ProjectOperationError('WRITE_FAILED', `Could not copy imported sprite files: ${(error as Error).message}`);
+    }
+    for (const item of staged) { next.assets.push(item.asset); next.slices.push(item.slice); next.frames.push(item.sprite); next.animation.frameIds.push(item.sprite.id); }
+    return { project: await persistProject(root, next), frameIds: staged.map(item => item.sprite.id) };
+  }
 
   async applyProcess(root: string, frameIds: string[], input: Partial<PixelProcessingSettings>): Promise<Project> {
     if (!frameIds.length) throw new ProjectOperationError('INVALID_ARGUMENT', 'At least one frame is required');

@@ -15,6 +15,7 @@ const api = {
   confirmDiscard: (message:string) => ipcRenderer.invoke('app:confirm-discard',message) as Promise<boolean>,
   appVersion: () => ipcRenderer.invoke('app:version') as Promise<string>,
   mcpStatus: () => ipcRenderer.invoke('mcp:status') as Promise<McpStatus>,
+  authorizeMcpSourceFolder: () => ipcRenderer.invoke('mcp:authorize-source-folder') as Promise<McpStatus>,
   startMcp: (mode:McpConnectionMode) => ipcRenderer.invoke('mcp:start', mode) as Promise<McpStatus>,
   stopMcp: () => ipcRenderer.invoke('mcp:stop') as Promise<McpStatus>,
   applyProcess: (root:string, frameIds:string[], settings:Partial<PixelProcessingSettings>) => ipcRenderer.invoke('mcp:apply-process', root, frameIds, settings) as Promise<Project>,

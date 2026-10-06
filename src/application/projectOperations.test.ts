@@ -48,4 +48,19 @@ describe('ProjectOperations', () => {
     expect(exported.files).toContain('exports/mcp_result_sheet.png');
     await expect(operations.exportAnimation(root, { prefix: 'mcp_result' })).rejects.toMatchObject({ code: 'COLLISION' } satisfies Partial<ProjectOperationError>);
   });
+
+  it('imports copied originals as independent initial frame revisions', async () => {
+    const { root } = await fixture(), operations = new ProjectOperations();
+    const png = new PNG({ width: 3, height: 2 }); png.data.fill(0); for (let index = 3; index < png.data.length; index += 4) png.data[index] = 255;
+    const bytes = PNG.sync.write(png);
+    const imported = await operations.importSprites(root, [
+      { name: 'Normal/slash.png', original: bytes, png: bytes },
+      { name: 'Apex/slash.png', original: bytes, png: bytes }
+    ]);
+    expect(imported.frameIds).toHaveLength(2);
+    expect(imported.project.assets.map(asset => asset.name)).toEqual(['Normal/slash.png', 'Apex/slash.png']);
+    expect(imported.project.frames.slice(-2).every(frame => frame.revisions.length === 1 && frame.width === 3 && frame.height === 2)).toBe(true);
+    await expect(fs.access(path.join(root, 'assets', 'originals', 'Normal', 'slash.png'))).resolves.toBeUndefined();
+    await expect(fs.access(path.join(root, imported.project.frames.at(-1)!.source))).resolves.toBeUndefined();
+  });
 });
