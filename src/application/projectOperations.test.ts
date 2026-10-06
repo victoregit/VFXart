@@ -49,6 +49,14 @@ describe('ProjectOperations', () => {
     await expect(operations.exportAnimation(root, { prefix: 'mcp_result' })).rejects.toMatchObject({ code: 'COLLISION' } satisfies Partial<ProjectOperationError>);
   });
 
+  it('upgrades only an explicit animation group', async () => {
+    const { root } = await fixture(), operations = new ProjectOperations();
+    const applied = await operations.applyUpgrade(root, { profile: 'pixel-art', strength: 70 }, ['f1']);
+    expect(applied.frames.find(frame => frame.id === 'f1')?.revisions).toHaveLength(2);
+    expect(applied.frames.find(frame => frame.id === 'f2')?.revisions).toHaveLength(1);
+    await expect(operations.analyze(root, { profile: 'pixel-art' }, ['missing'])).rejects.toMatchObject({ code: 'NOT_FOUND' } satisfies Partial<ProjectOperationError>);
+  });
+
   it('imports copied originals as independent initial frame revisions', async () => {
     const { root } = await fixture(), operations = new ProjectOperations();
     const png = new PNG({ width: 3, height: 2 }); png.data.fill(0); for (let index = 3; index < png.data.length; index += 4) png.data[index] = 255;

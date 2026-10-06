@@ -19,7 +19,7 @@ const api = {
   startMcp: (mode:McpConnectionMode) => ipcRenderer.invoke('mcp:start', mode) as Promise<McpStatus>,
   stopMcp: () => ipcRenderer.invoke('mcp:stop') as Promise<McpStatus>,
   applyProcess: (root:string, frameIds:string[], settings:Partial<PixelProcessingSettings>) => ipcRenderer.invoke('mcp:apply-process', root, frameIds, settings) as Promise<Project>,
-  applyUpgrade: (root:string, options:UpgradeAnalysisOptions) => ipcRenderer.invoke('mcp:apply-upgrade', root, options) as Promise<Project>,
+  applyUpgrade: (root:string, options:UpgradeAnalysisOptions, frameIds?:string[]) => ipcRenderer.invoke('mcp:apply-upgrade', root, options, frameIds) as Promise<Project>,
   exportAnimation: (root:string, options:Partial<Project['exportSettings']>) => ipcRenderer.invoke('mcp:export', root, options) as Promise<{files:string[];frameCount:number;sheet:{width:number;height:number}}>
   ,onProjectChanged: (listener: (project: Project) => void) => { const wrapped = (_event: Electron.IpcRendererEvent, project: Project) => listener(project); ipcRenderer.on('project:changed', wrapped); return () => ipcRenderer.removeListener('project:changed', wrapped); }
 };

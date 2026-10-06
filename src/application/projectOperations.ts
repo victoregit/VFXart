@@ -86,7 +86,7 @@ function upgradeProvenance(frame: SpriteFrame, analysis: ReturnType<typeof analy
 }
 function mergeSettings(settings: Partial<PixelProcessingSettings>) { return resolveSettings(settings); }
 
-export interface FrameInfo { id: string; width: number; height: number; anchorX: number; anchorY: number; offsetX: number; offsetY: number; duration?: number; activeRevisionId: string; revisionCount: number; }
+export interface FrameInfo { id: string; assetName?: string; width: number; height: number; anchorX: number; anchorY: number; offsetX: number; offsetY: number; duration?: number; activeRevisionId: string; revisionCount: number; }
 export interface ProjectStatus { id: string; name: string; schemaVersion: number; frameCount: number; fps: number; loop: boolean; frameIds: string[]; }
 
 export class ProjectOperations {
@@ -98,24 +98,29 @@ export class ProjectOperations {
   async inspectFrames(root: string, ids?: string[]): Promise<FrameInfo[]> {
     const project = await loadProject(root);
     const selection = ids?.length ? ids.map(id => frameFor(project, id)) : project.animation.frameIds.map(id => frameFor(project, id));
-    return selection.map(frame => ({ id: frame.id, width: frame.width, height: frame.height, anchorX: frame.anchorX, anchorY: frame.anchorY, offsetX: frame.offsetX, offsetY: frame.offsetY, duration: frame.duration, activeRevisionId: frame.activeRevisionId, revisionCount: frame.revisions.length }));
+    return selection.map(frame => ({ id: frame.id, assetName: project.assets.find(asset => asset.id === frame.assetId)?.name, width: frame.width, height: frame.height, anchorX: frame.anchorX, anchorY: frame.anchorY, offsetX: frame.offsetX, offsetY: frame.offsetY, duration: frame.duration, activeRevisionId: frame.activeRevisionId, revisionCount: frame.revisions.length }));
   }
 
   async rawFrame(root: string, frameId: string) { const project = await loadProject(root); const frame = frameFor(project, frameId); return { frame, raw: await decodePng(root, frame.source) }; }
-  async animationInputs(root: string) {
+  async animationInputs(root: string, selectedIds?: string[]) {
     const project = await loadProject(root);
-    const frames = await Promise.all(project.animation.frameIds.map(async id => {
+    const requested = selectedIds?.length ? selectedIds : project.animation.frameIds;
+    if (!requested.length) throw new ProjectOperationError('INVALID_ARGUMENT', 'Select at least one frame from the animation');
+    const known = new Set(project.animation.frameIds);
+    if (requested.some(id => !known.has(id))) throw new ProjectOperationError('NOT_FOUND', 'One or more selected frame IDs are not in the animation');
+    const ids = project.animation.frameIds.filter(id => requested.includes(id));
+    const frames = await Promise.all(ids.map(async id => {
       const frame = frameFor(project, id); const raw = await decodePng(root, frame.source);
       return { id: frame.id, frame: raw, offsetX: frame.offsetX, offsetY: frame.offsetY, anchorX: frame.anchorX, anchorY: frame.anchorY, source: frame.source };
     }));
     return { project, frames };
   }
 
-  async analyze(root: string, options: UpgradeAnalysisOptions = {}) { const { frames } = await this.animationInputs(root); return analyzeUpgrade(frames, options); }
+  async analyze(root: string, options: UpgradeAnalysisOptions = {}, selectedIds?: string[]) { const { frames } = await this.animationInputs(root, selectedIds); return analyzeUpgrade(frames, options); }
   async previewProcess(root: string, frameId: string, settings: Partial<PixelProcessingSettings>) {
     const { raw } = await this.rawFrame(root, frameId); const resolved = mergeSettings(settings); return { frame: processFrame(cloneFrame(raw), resolved), settings: resolved };
   }
-  async previewUpgrade(root: string, options: UpgradeAnalysisOptions = {}) { const { frames } = await this.animationInputs(root); return previewUpgrade(frames, options); }
+  async previewUpgrade(root: string, options: UpgradeAnalysisOptions = {}, selectedIds?: string[]) { const { frames } = await this.animationInputs(root, selectedIds); return previewUpgrade(frames, options); }
 
   /**
    * Commits copied originals and initial PNG frame revisions only after every
@@ -168,8 +173,8 @@ export class ProjectOperations {
     return persistProject(root, next);
   }
 
-  async applyUpgrade(root: string, options: UpgradeAnalysisOptions = {}): Promise<Project> {
-    const { project, frames } = await this.animationInputs(root); if (!frames.length) throw new ProjectOperationError('INVALID_ARGUMENT', 'Create frames in Cutter before running Upgrade');
+  async applyUpgrade(root: string, options: UpgradeAnalysisOptions = {}, selectedIds?: string[]): Promise<Project> {
+    const { project, frames } = await this.animationInputs(root, selectedIds); if (!frames.length) throw new ProjectOperationError('INVALID_ARGUMENT', 'Create frames in Cutter before running Upgrade');
     const profile = options.profile ?? 'pixel-art', strength = options.strength ?? 70, preview = previewUpgrade(frames, { ...options, profile, strength });
     const staged = await Promise.all(preview.frames.map(async output => {
       const original = frameFor(project, output.id), relative = revisionPath(output.id); await atomicWrite(resolveInside(root, relative), encodePng(output.frame));

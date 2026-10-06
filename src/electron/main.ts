@@ -57,7 +57,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('mcp:start', async (_event, mode: McpConnectionMode) => mcp.start(mode));
   ipcMain.handle('mcp:stop', async () => mcp.stop());
   ipcMain.handle('mcp:apply-process', async (_event, root: string, frameIds: string[], settings: Record<string, unknown>) => { if (mcp.status().projectId === undefined) throw new Error('No project is authorized'); const service = new (await import('../application/projectOperations')).ProjectOperations(); return service.applyProcess(rootFor(root), frameIds, settings); });
-  ipcMain.handle('mcp:apply-upgrade', async (_event, root: string, options: Record<string, unknown>) => { const service = new (await import('../application/projectOperations')).ProjectOperations(); return service.applyUpgrade(rootFor(root), options); });
+  ipcMain.handle('mcp:apply-upgrade', async (_event, root: string, options: Record<string, unknown>, frameIds?: string[]) => { const service = new (await import('../application/projectOperations')).ProjectOperations(); return service.applyUpgrade(rootFor(root), options, frameIds); });
   ipcMain.handle('mcp:export', async (_event, root: string, options: Record<string, unknown>) => { const service = new (await import('../application/projectOperations')).ProjectOperations(); return service.exportAnimation(rootFor(root), options); });
   await createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow(); });
