@@ -15,7 +15,7 @@ const mcp = new VfxMcpServer(async (request: McpApprovalRequest) => {
   const confirmation = dialog.showMessageBox(host, { type: 'question', buttons: ['Decline', 'Authorize'], defaultId: 0, cancelId: 0, title: 'VFXart MCP request', message: `ChatGPT requests: ${request.tool}`, detail: `Project: ${request.projectName}\n\n${request.summary}\n\nRequest: ${request.id}\n\nNo files will change unless you authorize this action.` }).then(result => result.response === 1);
   const timeout = new Promise<boolean>(resolve => setTimeout(() => resolve(false), 60_000));
   return Promise.race([confirmation, timeout]);
-});
+}, project => { if (windowRef && !windowRef.isDestroyed()) windowRef.webContents.send('project:changed', project); });
 
 function normalizeRelative(value: string) { const normalized = path.posix.normalize(value.replaceAll('\\', '/')); if (!normalized || normalized === '.' || normalized.startsWith('../') || normalized === '..' || path.posix.isAbsolute(normalized)) throw new Error('Invalid project-relative path'); return normalized; }
 function rootFor(root: string) { const resolved = path.resolve(root); if (!registeredRoots.has(resolved)) throw new Error('Project is not open'); return resolved; }

@@ -42,6 +42,15 @@ export function App() {
   const scheduleSave=useCallback(()=>{window.clearTimeout(saveTimer.current);saveTimer.current=window.setTimeout(()=>void save(),500)},[save]);
   useEffect(()=>{if(dirty)scheduleSave()},[dirty,scheduleSave]);
   useEffect(()=>{void window.vfx.appVersion().then(setAppVersion).catch(()=>setAppVersion('unknown'));},[]);
+  useEffect(()=>window.vfx.onProjectChanged(project=>{
+    if (dirty) { setNotice('MCP updated the project on disk. Save or discard local changes before reopening it.'); return; }
+    images.current.clear();
+    setSession(previous=>previous?{...previous,project}:previous);
+    setAssetId(project.assets[0]?.id??'');
+    setFrameId(project.animation.frameIds[0]??'');
+    setFrameIndex(0);
+    setNotice('Project updated through MCP.');
+  }),[dirty]);
   useEffect(()=>{const guard=(event:BeforeUnloadEvent)=>{if(dirty){event.preventDefault();event.returnValue='';}};window.addEventListener('beforeunload',guard);return()=>window.removeEventListener('beforeunload',guard)},[dirty]);
   useEffect(()=>{const listener=(event:KeyboardEvent)=>{ if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='z'){event.preventDefault();if(event.shiftKey)history.current.redo();else history.current.undo()} if(event.code==='Space'&&!['INPUT','SELECT'].includes((event.target as HTMLElement).tagName)){event.preventDefault();setPlay(v=>!v)} if(event.key==='ArrowLeft')setFrameIndex(v=>Math.max(0,v-1)); if(event.key==='ArrowRight')setFrameIndex(v=>Math.min(Math.max(0,(project?.animation.frameIds.length??1)-1),v+1)); if(event.key==='1')document.dispatchEvent(new Event('vfx:zoom-one'));}; window.addEventListener('keydown',listener);return()=>window.removeEventListener('keydown',listener)},[project]);
   useEffect(()=>{if(!play||!project?.animation.frameIds.length)return;const timer=window.setInterval(()=>setFrameIndex(i=>{const n=project.animation.frameIds.length;return i+1<n?i+1:project.animation.loop?0:i}),1000/project.animation.fps);return()=>window.clearInterval(timer)},[play,project]);

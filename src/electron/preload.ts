@@ -21,5 +21,6 @@ const api = {
   applyProcess: (root:string, frameIds:string[], settings:Partial<PixelProcessingSettings>) => ipcRenderer.invoke('mcp:apply-process', root, frameIds, settings) as Promise<Project>,
   applyUpgrade: (root:string, options:UpgradeAnalysisOptions) => ipcRenderer.invoke('mcp:apply-upgrade', root, options) as Promise<Project>,
   exportAnimation: (root:string, options:Partial<Project['exportSettings']>) => ipcRenderer.invoke('mcp:export', root, options) as Promise<{files:string[];frameCount:number;sheet:{width:number;height:number}}>
+  ,onProjectChanged: (listener: (project: Project) => void) => { const wrapped = (_event: Electron.IpcRendererEvent, project: Project) => listener(project); ipcRenderer.on('project:changed', wrapped); return () => ipcRenderer.removeListener('project:changed', wrapped); }
 };
 contextBridge.exposeInMainWorld('vfx', api);
